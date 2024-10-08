@@ -71,10 +71,6 @@ class DataTransformation:
             # Get the preprocessing pipeline
             opt = self.get_data_transformation()
 
-            # Log the shapes of the transformed arrays
-            logging.info(f"Shape of target_feature_train_df: {target_feature_train_df.shape}")
-
-
             logging.info("Preprocessing completed on training and testing datasets.")
 
             # Save the preprocessor object
