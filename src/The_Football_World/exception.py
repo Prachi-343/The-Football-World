@@ -1,5 +1,5 @@
 import sys
-class customexception(Exception):
+class CustomException(Exception):
     def __init__(self,error_message,error_details:sys):
         self.error_message = error_message
         _,_,exc_tb = error_details.exc_info()
@@ -17,4 +17,4 @@ if __name__ == "__main__":
         a=1/0
     
     except Exception as e:
-        raise customexception(e,sys)
+        raise CustomException(e,sys)

@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from src.The_Football_World.logger import logging
-from src.The_Football_World.exception import customexception
+from src.The_Football_World.exception import CustomException
 
 from sklearn.metrics import r2_score, mean_absolute_error,mean_squared_error
 
@@ -18,7 +18,7 @@ def save_object(file_path, obj):
             pickle.dump(obj, file_obj)
 
     except Exception as e:
-        raise customexception(e, sys)
+        raise CustomException(e, sys)
     
 def evaluate_model(X_train,y_train,X_test,y_test,models):
     try:
@@ -41,7 +41,7 @@ def evaluate_model(X_train,y_train,X_test,y_test,models):
 
     except Exception as e:
         logging.info('Exception occured during model training')
-        raise customexception(e,sys)
+        raise CustomException(e,sys)
     
 def load_object(file_path):
     try:
@@ -49,6 +49,6 @@ def load_object(file_path):
             return pickle.load(file_obj)
     except Exception as e:
         logging.info('Exception Occured in load_object function utils')
-        raise customexception(e,sys)
+        raise CustomException(e,sys)
 
     

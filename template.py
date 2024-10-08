@@ -19,6 +19,7 @@ list_of_files=[
     "notebooks/research.ipynb",
     "notebooks/data/.gitkeep",
     "requirements.txt",
+    "app.py",
     "setup.py",
     "init_setup.sh",
 ]
