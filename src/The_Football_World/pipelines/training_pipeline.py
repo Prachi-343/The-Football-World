@@ -41,14 +41,14 @@ class TrainingPipeline:
         try:
             logging.info("Starting data transformation process...")
             data_transformation = DataTransformation()
-            train_arr, test_arr = data_transformation.initate_data_transformation(train_data_path, test_data_path)
+            Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df = data_transformation.initate_data_transformation(train_data_path, test_data_path)
             logging.info("Data transformation complete.")
-            return train_arr, test_arr
+            return Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df
         except Exception as e:
             logging.error(f"Error during data transformation: {str(e)}")
             raise CustomException(e, sys)
         
-    def start_model_training(self, train_arr: np.ndarray, test_arr: np.ndarray):
+    def start_model_training(self,Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df):
         """
         Initiates the model training process.
         Args:
@@ -58,8 +58,11 @@ class TrainingPipeline:
         try:
             logging.info("Starting model training process...")
             model_trainer = ModelTrainer()
-            model_trainer.initiate_model_training(train_arr, test_arr)
+            train_accuracy,test_accuracy=model_trainer.initiate_model_training(Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df)
+            print(train_accuracy)
+            print(test_accuracy)
             logging.info("Model training complete.")
+            
         except Exception as e:
             logging.error(f"Error during model training: {str(e)}")
             raise CustomException(e, sys)
@@ -72,8 +75,8 @@ class TrainingPipeline:
         try:
             logging.info("Training pipeline initiated...")
             train_data_path, test_data_path = self.start_data_ingestion()
-            train_arr, test_arr = self.start_data_transformation(train_data_path, test_data_path)
-            self.start_model_training(train_arr, test_arr)
+            Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df = self.start_data_transformation(train_data_path, test_data_path)
+            self.start_model_training(Preprocessor_obj_filePath,input_feature_train_df,target_feature_train_df)
             logging.info("Training pipeline completed successfully.")
         except Exception as e:
             logging.error(f"Error in the training pipeline: {str(e)}")

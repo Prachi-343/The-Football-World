@@ -60,3 +60,6 @@ class DataIngestion:
         except Exception as e:
             logging.error(f"Error occurred during data ingestion: {str(e)}")
             raise CustomException(e, sys)
+
+# a=DataIngestion()
+# a.initate_data_ingestion()
