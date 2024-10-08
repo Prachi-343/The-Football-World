@@ -3,78 +3,63 @@ import sys
 import pandas as pd
 import numpy as np
 
-from sklearn.impute import SimpleImputer 
 from src.The_Football_World.exception import CustomException
 from src.The_Football_World.logger import logging
 from src.The_Football_World.utils.utils import load_object
+import joblib
 
 class PredictPipeline:
-    def __init__(self) -> None:
-        pass
-    
+    def __init__(self):
+        self.model_path = os.path.join("artifacts", "model.pkl")
+        self.preprocessor_path = os.path.join("artifacts", "preprocessor.pkl")
+
     def predict(self, features):
-        try:
-            model_path = os.path.join("artifacts", "Model.pkl")
-            
-            # Load the preprocessor and the trained model separately
-            model = load_object(model_path)  # This should be the BayesSearchCV object
-            
-            # Extract the fitted pipeline from BayesSearchCV
-            # model.best_estimator_  # This is your pipeline
-            
-            # Preprocess the input features using the pipeline's 'preprocessor' step
-            transformed_data = SimpleImputer.fit(features)
-            
-            # Use the model to make predictions on the preprocessed data
-            pred = model.predict(transformed_data)
-            
-            # Map predictions to the specific outcomes
-            outcome_mapping = {0: 'Away Team Wins', 1: 'Home Team Wins', 2: 'Draw/Penalty'}
-            final_predictions = [outcome_mapping.get(p, "Unknown") for p in pred]
-            
-            return final_predictions
-        
-        except Exception as e:
-            raise CustomException(e, sys)
-    
-    
+        """Predicts the match outcome based on input features."""
+        model = joblib.load(self.model_path)
+        preprocessor = joblib.load(self.preprocessor_path)
+        transformed_features = preprocessor.transform(features)
+        predictions = model.predict(transformed_features)
+        return predictions
+
+    def predict_proba(self, features):
+        """Predicts the probabilities for each outcome (home win, away win, draw)."""
+        model = joblib.load(self.model_path)
+        preprocessor = joblib.load(self.preprocessor_path)
+        transformed_features = preprocessor.transform(features)
+        probabilities = model.predict_proba(transformed_features)
+        return probabilities
+
+
 class CustomData:
-    def __init__(self, home_team: str, away_team: str, tournament: str, home_score=np.nan ,away_score=np.nan):
-        # Input features related to the match
+    def __init__(self, home_team: str, away_team: str, tournament: str, neutral: bool, city: str, country: str, home_score=np.nan, away_score=np.nan):
+        """Initializes the custom data inputs."""
         self.home_team = home_team
         self.away_team = away_team
+        self.tournament = tournament
+        self.neutral = neutral
+        self.city = city
+        self.country = country
         self.home_score = home_score
         self.away_score = away_score
-        self.tournament = tournament
-        
+
     def get_data_as_dataframe(self):
+        """Converts the input data into a DataFrame for prediction."""
         try:
-            # Create a dictionary of input data
             custom_data_input_dict = {
                 'home_team': [self.home_team],
                 'away_team': [self.away_team],
+                'tournament': [self.tournament],
+                'neutral': [self.neutral],
+                'city': [self.city],
+                'country': [self.country],
                 'home_score': [self.home_score],
-                'away_score': [self.away_score],
-                'tournament': [self.tournament]
+                'away_score': [self.away_score]
             }
-            # Convert to DataFrame
             df = pd.DataFrame(custom_data_input_dict)
-            logging.info('Dataframe created for prediction')
+            logging.info("Dataframe created for prediction")
             return df
         except Exception as e:
-            logging.info('Exception Occurred while creating DataFrame for prediction')
+            logging.error(f"Exception occurred while creating DataFrame: {str(e)}")
             raise CustomException(e, sys)
 
 
-
-user_input = CustomData(
-    home_team='Scotland',
-    away_team='England',
-    tournament='Friendly'
-)
-
-final_data=user_input.get_data_as_dataframe()
-predictor = PredictPipeline()
-
-prediction = predictor.predict(final_data)
-print(f'Predicted Outcome: {prediction}')

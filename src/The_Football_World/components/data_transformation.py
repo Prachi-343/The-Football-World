@@ -1,88 +1,77 @@
 import os
-import sys
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer 
+import sys
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from category_encoders.target_encoder import TargetEncoder
-from xgboost import XGBClassifier
-from skopt import BayesSearchCV 
-from skopt.space import Real, Integer
+from sklearn.impute import SimpleImputer
+import joblib
 from src.The_Football_World.logger import logging
 from src.The_Football_World.exception import CustomException
-from src.The_Football_World.utils.utils import save_object
 
 class DataTransformationConfig:
-    Preprocessor_obj_filePath = os.path.join('artifacts', 'Preprocessor.pkl')
+    PREPROCESSOR_OBJ_FILE_PATH = os.path.join(os.getcwd(), "artifacts", "preprocessor.pkl")
 
 class DataTransformation:
     def __init__(self) -> None:
-        self.dataTransformationConfig = DataTransformationConfig()
-        
-    def get_data_transformation(self):
-        logging.info("get data transformation")
+        self.data_transformation_config = DataTransformationConfig()
+
+    def get_preprocessor(self):
+        """Returns a preprocessing pipeline."""
         try:
-            pipeline = Pipeline([
-                ("imputer", SimpleImputer(strategy='most_frequent')),
-                ("Encoder", TargetEncoder()), 
-                ("clf", XGBClassifier(random_state=8, enable_categorical=True)) 
+            numerical_columns = ['home_score', 'away_score']
+            categorical_columns = ['home_team', 'away_team', 'tournament', 'city', 'country', 'neutral']
+
+            # Numeric transformations
+            numerical_pipeline = Pipeline(steps=[
+                ('imputer', SimpleImputer(strategy="mean")),
+                ('scaler', StandardScaler())
             ])
 
-            search_space = {
-                'clf__max_depth': Integer(2, 8),
-                'clf__learning_rate': Real(0.001, 1.0, prior='log-uniform'),
-                'clf__subsample': Real(0.5, 1.0),
-                'clf__colsample_bytree': Real(0.5, 1.0), 
-                'clf__colsample_bylevel': Real(0.5, 1.0),
-                'clf__colsample_bynode': Real(0.5, 1.0),
-                'clf__reg_alpha': Real(0.0, 10.0),
-                'clf__reg_lambda': Real(0.0, 10.0),
-                'clf__gamma': Real(0.0, 10.0)
-            }
+            # Categorical transformations
+            categorical_pipeline = Pipeline(steps=[
+                ('imputer', SimpleImputer(strategy="most_frequent")),
+                ('encoder', OneHotEncoder(handle_unknown="ignore"))
+            ])
 
+            # Combine pipelines
+            preprocessor = ColumnTransformer([
+                ('num', numerical_pipeline, numerical_columns),
+                ('cat', categorical_pipeline, categorical_columns)
+            ])
 
-            opt = BayesSearchCV(pipeline, search_space, cv=3, n_iter=18, scoring='roc_auc_ovr', random_state=8)
-
-            return opt
+            return preprocessor
         except Exception as e:
-            logging.info(f"Error in data transformation: {str(e)}")
             raise CustomException(e, sys)
-    
-    def initate_data_transformation(self, train_path, test_path):
-        logging.info("Data transformation started")
+
+    def initiate_data_transformation(self, train_path, test_path):
+        """Transforms the data."""
         try:
-            # Load train and test data
+            # Load datasets
             train_df = pd.read_csv(train_path)
             test_df = pd.read_csv(test_path)
-            
-            logging.info("Read train and test data successfully")
-            logging.info(f"Train Data Sample: \n{train_df.head().to_string()}")
-            logging.info(f"Test Data Sample: \n{test_df.head().to_string()}")
 
-            # Target column and columns to drop
-            target_column_name = "match_outcome"  # Outcome as target for classification
-            drop_columns = [target_column_name, "date", "city", "country","neutral"]  # Drop irrelevant columns like 'date'
+            logging.info("Data loaded for transformation")
 
-            # Separate input features and target for train and test datasets
-            input_feature_train_df = train_df.drop(columns=drop_columns, axis=1)
-            target_feature_train_df = train_df[target_column_name]
+            # Separate features and target
+            input_features_train_df = train_df.drop(columns=['match_outcome'], axis=1)
+            target_feature_train_df = train_df['match_outcome']
+            input_features_test_df = test_df.drop(columns=['match_outcome'], axis=1)
+            target_feature_test_df = test_df['match_outcome']
 
-            # Get the preprocessing pipeline
-            opt = self.get_data_transformation()
+            # Get preprocessor object
+            preprocessor = self.get_preprocessor()
+            logging.info("Preprocessor object created")
 
-            logging.info("Preprocessing completed on training and testing datasets.")
+            # Fit preprocessor on train data and transform both train and test data
+            input_features_train_arr = preprocessor.fit_transform(input_features_train_df)
+            input_features_test_arr = preprocessor.transform(input_features_test_df)
 
             # Save the preprocessor object
-            save_object(
-                file_path=self.dataTransformationConfig.Preprocessor_obj_filePath,
-                obj=opt
-            )
+            os.makedirs(os.path.dirname(self.data_transformation_config.PREPROCESSOR_OBJ_FILE_PATH), exist_ok=True)
+            joblib.dump(preprocessor, self.data_transformation_config.PREPROCESSOR_OBJ_FILE_PATH)
+            logging.info(f"Preprocessor object saved at {self.data_transformation_config.PREPROCESSOR_OBJ_FILE_PATH}")
 
-            return (self.dataTransformationConfig.Preprocessor_obj_filePath,
-                    input_feature_train_df,target_feature_train_df)
-
+            return input_features_train_arr, target_feature_train_df, input_features_test_arr, target_feature_test_df
         except Exception as e:
-            logging.info(f"Error in data transformation: {str(e)}")
             raise CustomException(e, sys)
-
