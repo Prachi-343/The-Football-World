@@ -1,84 +1,63 @@
+import numpy as np
 import os
 import sys
-import numpy as np
-import pandas as pd
+from sklearn.model_selection import RandomizedSearchCV, cross_val_score
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import joblib
 from src.The_Football_World.logger import logging
 from src.The_Football_World.exception import CustomException
-from src.The_Football_World.utils.utils import save_object, evaluate_model
-
-from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
-from sklearn.model_selection import train_test_split
 
 class ModelTrainerConfig:
-    model_file_path = os.path.join("artifacts", "model.pkl")
+    MODEL_FILE_PATH = os.path.join(os.getcwd(), "artifacts", "model.pkl")
 
 class ModelTrainer:
-    def __init__(self):
+    def __init__(self) -> None:
         self.model_trainer_config = ModelTrainerConfig()
 
-    def train_model(self, X_train, y_train):
-        """Train the XGBoost model on the training dataset."""
+    def initiate_model_training(self, X_train, y_train, X_test, y_test):
+        """Trains and tunes the model."""
         try:
-            logging.info("Starting model training...")
+            logging.info("Model training started")
 
-            # Initialize the XGBoost classifier
-            model = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42)
+            # Define the XGBoost model with hyperparameter tuning
+            xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+            param_dist = {
+                'n_estimators': [50, 100, 200],
+                'learning_rate': [0.01, 0.1, 0.3],
+                'max_depth': [3, 5, 7],
+                'subsample': [0.5, 0.7, 1.0]
+            }
 
-            # Train the model
-            model.fit(X_train, y_train)
-            
-            logging.info("Model training completed.")
+            # Perform randomized search for hyperparameter tuning
+            randomized_search = RandomizedSearchCV(xgb, param_distributions=param_dist, 
+                                                   n_iter=10, scoring='accuracy', 
+                                                   cv=3, verbose=1, random_state=42)
+            randomized_search.fit(X_train, y_train)
 
-            return model
-        except Exception as e:
-            logging.info("Error in training the model", e)
-            raise CustomException(e, sys)
+            best_model = randomized_search.best_estimator_
 
-    def evaluate_model(self, model, X_test, y_test):
-        """Evaluate the trained model on the test data."""
-        try:
-            logging.info("Evaluating model performance...")
+            # Cross-validation to check performance
+            cv_scores = cross_val_score(best_model, X_train, y_train, cv=5, scoring='accuracy')
+            logging.info(f"Cross-validation accuracy: {cv_scores.mean()}")
 
-            # Make predictions on test data
-            y_pred = model.predict(X_test)
+            # Train the best model on the full training data
+            best_model.fit(X_train, y_train)
 
-            # Calculate accuracy
+            # Make predictions and evaluate
+            y_pred = best_model.predict(X_test)
             accuracy = accuracy_score(y_test, y_pred)
-            logging.info(f"Model Accuracy: {accuracy}")
+            precision = precision_score(y_test, y_pred, average='weighted')
+            recall = recall_score(y_test, y_pred, average='weighted')
+            f1 = f1_score(y_test, y_pred, average='weighted')
 
-            # Generate and log the classification report and confusion matrix
-            report = classification_report(y_test, y_pred)
-            cm = confusion_matrix(y_test, y_pred)
-            logging.info(f"Classification Report:\n {report}")
-            logging.info(f"Confusion Matrix:\n {cm}")
+            logging.info(f"Test accuracy: {accuracy}")
+            logging.info(f"Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
 
-            return accuracy
+            # Save the trained model
+            joblib.dump(best_model, self.model_trainer_config.MODEL_FILE_PATH)
+            logging.info(f"Model saved at {self.model_trainer_config.MODEL_FILE_PATH}")
+
+            return accuracy, precision, recall, f1
         except Exception as e:
-            logging.info("Error during model evaluation", e)
-            raise CustomException(e, sys)
-
-    def initiate_model_training(self, train_arr, test_arr):
-        """Main function to initiate the model training and evaluation pipeline."""
-        try:
-            logging.info("Model training pipeline started...")
-
-            # Separate input features and target labels
-            X_train, y_train = train_arr[:, :-1], train_arr[:, -1]
-            X_test, y_test = test_arr[:, :-1], test_arr[:, -1]
-
-            # Train the model
-            model = self.train_model(X_train, y_train)
-
-            # Evaluate the model
-            accuracy = self.evaluate_model(model, X_test, y_test)
-
-            # Save the trained model to a file
-            save_object(file_path=self.model_trainer_config.model_file_path, obj=model)
-
-            logging.info("Model training pipeline completed successfully.")
-
-            return accuracy
-        except Exception as e:
-            logging.info("Error in model training pipeline", e)
             raise CustomException(e, sys)
