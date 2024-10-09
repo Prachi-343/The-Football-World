@@ -1,83 +1,107 @@
-import os
+from flask import Flask, render_template, request, redirect, url_for
 import pandas as pd
 from src.The_Football_World.pipelines.prediction_pipeline import CustomData, PredictPipeline
-from src.The_Football_World.exception import CustomException
-from src.The_Football_World.logger import logging
+import os
 
-# Load the dataset containing match history
-MATCH_HISTORY_PATH = os.path.join("notebooks", "data", "results.csv")
-match_history = pd.read_csv(MATCH_HISTORY_PATH)
+app = Flask(__name__)
 
-def get_previous_matches(team_name, num_matches=5):
-    """Fetches the previous 'num_matches' matches of the given team."""
-    team_matches = match_history[(match_history['home_team'] == team_name) | (match_history['away_team'] == team_name)]
-    team_matches = team_matches.sort_values(by='date', ascending=False).head(num_matches)
-    return team_matches[['date', 'home_team', 'away_team', 'home_score', 'away_score']]
+# Function to map numerical outcomes to human-readable results
+def map_outcome_label(outcome):
+    if outcome == 1:
+        return "Home Team Wins"
+    elif outcome == 0:
+        return "Away Team Wins"
+    elif outcome == 2:
+        return "Draw"
+    else:
+        return "Unknown"
 
-def calculate_probabilities(prediction_probs):
-    """Maps the model output probabilities to winning chances for both teams."""
+# Function to get the previous 5 matches of a team from raw.csv
+def get_previous_matches(team_name):
     try:
-        # Ensure we have at least three values for home, away, and draw.
-        if len(prediction_probs[0]) == 3:
-            home_win_prob = prediction_probs[0][1] * 100  # Home win probability
-            away_win_prob = prediction_probs[0][0] * 100  # Away win probability
-            draw_prob = prediction_probs[0][2] * 100  # Draw probability
-        else:
-            raise ValueError("Unexpected probability output format")
-        
-        return home_win_prob, away_win_prob, draw_prob
+        # Path to the raw.csv file in the artifacts folder
+        csv_file_path = os.path.join("artifacts", "raw.csv")
+
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv(csv_file_path)
+
+        # Filter matches where the team played as home or away
+        team_matches = df[(df['home_team'] == team_name) | (df['away_team'] == team_name)]
+
+        # Sort matches by date (assuming 'date' column exists in the format YYYY-MM-DD)
+        team_matches['date'] = pd.to_datetime(team_matches['date'])
+        team_matches = team_matches.sort_values(by='date', ascending=False)
+
+        # Select the last 5 matches
+        last_5_matches = team_matches.head(5)
+
+        # Convert the matches to a list of dictionaries to pass to the HTML template
+        matches_list = last_5_matches[['date', 'home_team', 'away_team', 'home_score', 'away_score']].to_dict(orient='records')
+
+        return matches_list
+
     except Exception as e:
-        logging.error(f"Error calculating probabilities: {str(e)}")
-        return 0, 0, 0
+        print(f"Error occurred while fetching previous matches: {str(e)}")
+        return []
 
-# User input for home team and away team
-home_team = 'Scotland'
-away_team = 'England'
+# Home Route ('/')
+@app.route('/')
+def home():
+    return render_template('index.html')
 
-# Get the previous 5 matches for both teams
-home_team_previous_matches = get_previous_matches(home_team)
-away_team_previous_matches = get_previous_matches(away_team)
+# Predict Route ('/predict')
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        # Get form data from the user
+        home_team = request.form['home_team']
+        away_team = request.form['away_team']
+        tournament = request.form['tournament']
+        neutral = request.form.get('neutral', 'false') == 'true'
+        city = request.form['city']
+        country = request.form['country']
 
+        # Create a CustomData instance with the form data
+        user_input = CustomData(
+            home_team=home_team,
+            away_team=away_team,
+            tournament=tournament,
+            neutral=neutral,
+            city=city,
+            country=country
+        )
 
-print("\n")
-print("\n")
-print(f"Previous 5 matches of {home_team}:")
-print(home_team_previous_matches)
-print("\n")
-print("\n")
-print("\n")
-print(f"Previous 5 matches of {away_team}:")
-print(away_team_previous_matches)
+        # Convert the input to a DataFrame
+        final_data = user_input.get_data_as_dataframe()
 
-# Prepare the data for prediction
-user_input = CustomData(
-    home_team=home_team,
-    away_team=away_team,
-    tournament='Friendly',
-    neutral=False,
-    city='Glasgow',
-    country='Scotland'
-)
+        # Initialize the prediction pipeline
+        predictor = PredictPipeline()
 
-# Convert input data to DataFrame
-final_data = user_input.get_data_as_dataframe()
+        # Get predictions
+        prediction = predictor.predict(final_data)
 
-# Initialize prediction pipeline
-predictor = PredictPipeline()
+        # Get prediction probabilities (optional)
+        prediction_probs = predictor.predict_proba(final_data)
 
-# Get predictions
-prediction = predictor.predict(final_data)
+        # Get the last 5 matches for the home team
+        last_5_matches = get_previous_matches(home_team)
 
-# Try to get prediction probabilities, if supported
-try:
-    prediction_probs = predictor.predict_proba(final_data)
-    home_win_prob, away_win_prob, draw_prob = calculate_probabilities(prediction_probs)
-    print("\n")
-    print("\n")
-    print(f"Winning Chances - Home Team ({home_team}): {home_win_prob:.2f}%")
-    print("\n")
-    print(f"Winning Chances - Away Team ({away_team}): {away_win_prob:.2f}%")
-    print("\n")
-    print(f"Chances of Draw: {draw_prob:.2f}%")
-except AttributeError:
-    print(f"Model does not support probability predictions. Predicted Outcome: {prediction[0]}")
+        # Map the numerical outcome to a human-readable label
+        mapped_outcome = map_outcome_label(prediction[0])
+
+        # Round the probabilities to two decimal places
+        home_win_prob = round(prediction_probs[0][1] * 100, 2)
+        away_win_prob = round(prediction_probs[0][0] * 100, 2)
+        draw_prob = round(prediction_probs[0][2] * 100, 2)
+
+        # Pass the last 5 matches to the result page
+        return render_template('result.html', outcome=mapped_outcome, 
+                               home_win_prob=home_win_prob, 
+                               away_win_prob=away_win_prob, 
+                               draw_prob=draw_prob, 
+                               last_5_matches=last_5_matches)
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+
+if __name__ == '__main__':
+    app.run(debug=True)
